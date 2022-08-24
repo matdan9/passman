@@ -30,7 +30,7 @@ func Crypt(data []byte, key []byte) ([]byte) {
 	return dst
 }
 
-func DeCrypt(data []byte, key []byte) (string, error) {
+func Decrypt(data []byte, key []byte) ([]byte, error) {
 	splits := bytes.Split(data, []byte("\n"))
 	data = splits[0]
 	salt := splits[1]
@@ -47,9 +47,9 @@ func DeCrypt(data []byte, key []byte) (string, error) {
 	if err != nil {
 		// TODO change for logger output
 		fmt.Println(err)
-		return "", errors.New("Could not decrypt with provided key")
+		return nil, errors.New("Could not decrypt with provided key")
 	}
-	return string(plainData), nil
+	return plainData, nil
 }
 
 func getAesGcm (key []byte) (cipher.AEAD){

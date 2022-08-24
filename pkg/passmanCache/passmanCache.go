@@ -6,54 +6,73 @@ import (
 	"sort"
 	"crypto/sha256"
 	"errors"
+	"encoding/json"
 	"passman/pkg/passmanCrypt"
 	"passman/pkg/passmanConfig"
 )
 
-func SetSeed(words []string, key []byte) (error) {
-	sort.Strings(words);
+type Cache struct {
+	Seed []byte
+	keywords []string
+}
+
+func (cache *Cache) GenerateSeed(words []string) {
+	sort.Strings(words)
 	var seed string
 	for i:=0; i<len(words); i++ { 
 		seed += words[i]
 	}
-	seedBuff := sha256.Sum256([]byte(seed))
-	if err := saveCache(seedBuff[:], key); err != nil {
-		return err
-	}
-	fmt.Printf("%v\n", words);
-	return nil
+	hashedSeed := sha256.Sum256([]byte(seed))
+	cache.Seed = hashedSeed[:]
 }
 
-func GetCacheContent() ([]byte, error) {
+func GetCache(key []byte) (Cache, error) {
 	config,_ := passmanConfig.GetConfig()
 	file,err := os.Open(config.CacheLocation)
 	if err != nil {
-		return nil, errors.New("Looks like passman is not setup yet, use \"passman init\" to get started")
+		return Cache{}, errors.New("Looks like passman is not setup yet, use \"passman init\" to get started")
 	}
 	fInfo,_ := file.Stat()
-	data := make([]byte, fInfo.Size())
-	if _,err := file.Read(data); err != nil {
-		return nil, errors.New("Could not read file " + config.CacheLocation)
+	cryptedData := make([]byte, fInfo.Size())
+	if _,err := file.Read(cryptedData); err != nil {
+		return Cache{}, errors.New("Could not read file " + config.CacheLocation)
 	}
 	if err = file.Close(); err != nil {
-		return nil, errors.New("Could not close " + config.CacheLocation + " properly")
+		return Cache{}, errors.New("Could not close " + config.CacheLocation + " properly")
 	}
-	return data, nil
+	data,decryptErr := passmanCrypt.Decrypt(cryptedData, key)
+	if decryptErr != nil {
+		fmt.Println(decryptErr);
+		return Cache{}, errors.New("could not decrypt cache with provided key")
+	}
+	var cache Cache
+	if jsonErr := json.Unmarshal(data, &cache); jsonErr != nil {
+		fmt.Println(jsonErr)
+		errors.New("Json if corrupted")
+	}
+	return cache, nil
 }
 
-func saveCache(seed []byte, key []byte) (error) {
-	cryptedSeed := passmanCrypt.Crypt(seed, key)
+func (cache *Cache) Save(key []byte) (error) {
 	config,_ := passmanConfig.GetConfig()
 	file, err := os.Create(config.CacheLocation)
 	if err != nil {
 		return errors.New("Could not open " + config.CacheLocation)
 	}
-	_,err = file.Write(cryptedSeed)
+	json,err := json.Marshal(cache)
+	if err != nil {
+		fmt.Println(err)
+		return errors.New("Could not get cache in json format")
+	}
+	cryptedData := passmanCrypt.Crypt(json, key)
+	_,err = file.Write(cryptedData)
 	if err != nil {
 		file.Close()
 		return errors.New("Could not write to " + config.CacheLocation)
 	}
-	file.Close()
+	if err = file.Close(); err != nil {
+		return errors.New("Could not close cache file")
+	}
 	os.Chmod(config.CacheLocation, 0600)
 	return nil
 }

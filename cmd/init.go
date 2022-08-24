@@ -37,7 +37,11 @@ var initCmd = &cobra.Command {
 func initExec(cmd *cobra.Command, args []string) {
 	fmt.Println(seedIntroduction + "\n")
 	words := readWords()
-	passmanCache.SetSeed(words, readConfirmPassword());
+	var cache passmanCache.Cache
+	cache.GenerateSeed(words);
+	if saveErr := cache.Save(readConfirmPassword()); saveErr != nil {
+		fmt.Println(saveErr)
+	}
 }
 
 func readConfirmPassword() ([]byte) {
@@ -49,6 +53,7 @@ func readConfirmPassword() ([]byte) {
 		fmt.Printf("\nConfrim Password: ")
 		confPassword,_ = term.ReadPassword(int(syscall.Stdin))
 		if eq := bytes.Compare(password, confPassword); eq == 0 {
+			fmt.Println("\n")
 			return password
 		}
 		fmt.Printf("\nThe passwords are not equal\n")
