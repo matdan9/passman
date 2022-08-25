@@ -52,6 +52,12 @@ func Decrypt(data []byte, key []byte) ([]byte, error) {
 	return plainData, nil
 }
 
+func GenPass(seed []byte, keyword []byte) (string) {
+	dump := append(seed, keyword...)
+	pass := sha256.Sum256(dump)
+	return base64.StdEncoding.EncodeToString(pass[:])
+}
+
 func getAesGcm (key []byte) (cipher.AEAD){
 	hashKey := sha256.Sum256(key)
 	c, err := aes.NewCipher(hashKey[:])
