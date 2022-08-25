@@ -3,12 +3,13 @@ package cmd
 import (
 	"fmt"
 	"syscall"
-
+	"os"
+	"errors"
 	"passman/pkg/passmanCache"
 	"passman/pkg/passmanCrypt"
 	"golang.org/x/term"
 	"github.com/spf13/cobra"
-	"golang.design/x/clipboard"
+	"github.com/atotto/clipboard"
 )
 
 const long = `Bwill give you the password generated from the given key. By default the key 
@@ -32,17 +33,19 @@ func getExec(cmd *cobra.Command, args []string) {
 	cache,cacheErr := passmanCache.GetCache(password)
 	if cacheErr != nil {
 		fmt.Println("Password is not valid")
-		return
+		os.Exit(1)
 	}
 	genPass := passmanCrypt.GenPass(cache.Seed, []byte(args[0]))
-	useClipboard(genPass)
-	fmt.Println(genPass)
+	if clipErr := useClipboard(genPass); clipErr != nil {
+		os.Exit(1)
+	}
+	//fmt.Println(genPass)
 }
 
-func useClipboard(password string) {
-	err := clipboard.Init()
-	if err != nil {
-		fmt.Println("Could not use clipboard")
+func useClipboard(password string) (error){
+	if err := clipboard.WriteAll(password); err != nil {
+		fmt.Println(err)
+		return errors.New("Could not use clipboard")
 	}
-	clipboard.Write(clipboard.FmtText, []byte(password))
+	return nil
 }
