@@ -6,6 +6,7 @@ import (
 	"sort"
 	"crypto/sha256"
 	"errors"
+	"bytes"
 	"encoding/json"
 	"passman/pkg/passmanCrypt"
 	"passman/pkg/passmanConfig"
@@ -13,7 +14,11 @@ import (
 
 type Cache struct {
 	Seed []byte
-	keywords []string
+	Keywords []string
+}
+
+func (cache *Cache) AddKeyword(word string) {
+	cache.Keywords = append(cache.Keywords, word)
 }
 
 func (cache *Cache) GenerateSeed(words []string) {
@@ -40,15 +45,14 @@ func GetCache(key []byte) (Cache, error) {
 	if err = file.Close(); err != nil {
 		return Cache{}, errors.New("Could not close " + config.CacheLocation + " properly")
 	}
-	data,decryptErr := passmanCrypt.Decrypt(cryptedData, key)
+	data,decryptErr := passmanCrypt.Decrypt(bytes.NewBuffer(cryptedData), key)
 	if decryptErr != nil {
-		fmt.Println(decryptErr);
 		return Cache{}, errors.New("could not decrypt cache with provided key")
 	}
 	var cache Cache
-	if jsonErr := json.Unmarshal(data, &cache); jsonErr != nil {
+	if jsonErr := json.Unmarshal(data.Bytes(), &cache); jsonErr != nil {
 		fmt.Println(jsonErr)
-		errors.New("Json if corrupted")
+		return Cache{}, errors.New("Json is corrupted")
 	}
 	return cache, nil
 }
@@ -59,19 +63,21 @@ func (cache *Cache) Save(key []byte) (error) {
 	if err != nil {
 		return errors.New("Could not open " + config.CacheLocation)
 	}
+	defer file.Close()
 	json,err := json.Marshal(cache)
 	if err != nil {
 		fmt.Println(err)
 		return errors.New("Could not get cache in json format")
 	}
-	cryptedData := passmanCrypt.Crypt(json, key)
-	_,err = file.Write(cryptedData)
+	cryptedData,cryptErr := passmanCrypt.Crypt(bytes.NewBuffer(json), key)
+	if cryptErr != nil {
+		fmt.Println(err)
+		return errors.New("Could not crypt data")
+	}
+	_,err = file.Write(cryptedData.Bytes())
 	if err != nil {
 		file.Close()
 		return errors.New("Could not write to " + config.CacheLocation)
-	}
-	if err = file.Close(); err != nil {
-		return errors.New("Could not close cache file")
 	}
 	os.Chmod(config.CacheLocation, 0600)
 	return nil

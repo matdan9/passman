@@ -13,43 +13,60 @@ import (
 	"passman/pkg/passmanConfig"
 )
 
-func PrintPass() {
-	fmt.Printf("Password Print\n")
-}
-
-
-func Crypt(data []byte, key []byte) ([]byte) {
-	salt,_ := generateSalt()
-	gcm := getAesGcm(append(key, []byte(salt)...))
-	nonce := make([]byte, gcm.NonceSize())
-	cryptedSeed := gcm.Seal(nonce, nonce, data, nil)
-	dst := make([]byte, base64.StdEncoding.EncodedLen(len(cryptedSeed)))
-	base64.StdEncoding.Encode(dst, cryptedSeed)
-	dst = append(dst, []byte("\n")...)
-	dst = append(dst, salt...)
-	return dst
-}
-
-func Decrypt(data []byte, key []byte) ([]byte, error) {
-	splits := bytes.Split(data, []byte("\n"))
-	data = splits[0]
-	salt := splits[1]
-	gcm := getAesGcm(append(key, salt...))
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		fmt.Println("Wrong length")
-	}
-	dst := make([]byte, base64.StdEncoding.DecodedLen(len(data)))
-	base64.StdEncoding.Decode(dst, data)
-	dst = dst[:len(dst)-1]
-	nonce, data := dst[:nonceSize], dst[nonceSize:]
-	plainData, err := gcm.Open(nil, nonce, data, nil)
-	if err != nil {
-		// TODO change for logger output
+func Crypt(inBuff *bytes.Buffer, key []byte) (*bytes.Buffer, error) {
+	cryptedBuff := bytes.NewBuffer([]byte{})
+	// TODO predict the final length of the cryptedBuff and Grow it to the accoring size
+	block := getBlock(key)
+	iv := make([]byte, block.BlockSize())
+	if _,err := io.ReadFull(rand.Reader, iv); err != nil {
 		fmt.Println(err)
-		return nil, errors.New("Could not decrypt with provided key")
+		return nil, errors.New("Could not crypt data")
 	}
-	return plainData, nil
+	cryptedBuff.Write(iv)
+	stream := cipher.NewCTR(block, iv)
+	err := processFullBuffer(inBuff, cryptedBuff, &stream)
+	return cryptedBuff, err
+}
+
+func Decrypt(inBuff *bytes.Buffer, key []byte) (*bytes.Buffer, error) {
+	outBuff := bytes.NewBuffer([]byte{})
+	block := getBlock(key)
+	iv := make([]byte, block.BlockSize())
+	if _,err := inBuff.Read(iv); err != nil {
+		fmt.Println(err)
+		return nil, errors.New("Could not read provided buffer")
+	}
+	stream := cipher.NewCTR(block, iv)
+	err := processFullBuffer(inBuff, outBuff, &stream)
+	return outBuff, err
+}
+
+func processFullBuffer(inBuff *bytes.Buffer, outBuff *bytes.Buffer, stream *cipher.Stream) (error) {
+	tmpBuff := make([]byte, 2048)
+	for {
+		n,err := inBuff.Read(tmpBuff)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println(err)
+			return errors.New("Could not crypt data")
+		}
+		if n>0 {
+			(*stream).XORKeyStream(tmpBuff, tmpBuff[:n])
+			outBuff.Write(tmpBuff[:n])
+		}
+	}
+	return nil
+}
+
+func getBlock (key []byte) (cipher.Block){
+	hashKey := sha256.Sum256(key)
+	c, err := aes.NewCipher(hashKey[:])
+	if err != nil {
+		fmt.Println(err)
+	}
+	return c
 }
 
 func GenPass(seed []byte, keyword []byte) (string) {
@@ -58,20 +75,7 @@ func GenPass(seed []byte, keyword []byte) (string) {
 	return base64.StdEncoding.EncodeToString(pass[:])
 }
 
-func getAesGcm (key []byte) (cipher.AEAD){
-	hashKey := sha256.Sum256(key)
-	c, err := aes.NewCipher(hashKey[:])
-	if err != nil {
-		fmt.Println(err)
-	}
-	gcm, err := cipher.NewGCM(c)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return gcm
-}
-
-func generateSalt() ([]byte, error) {
+func generateIV() ([]byte, error) {
 	config,_ := passmanConfig.GetConfig()
 	salt := make([]byte, config.SaltLength)
 	_,err := io.ReadFull(rand.Reader, salt)
@@ -79,7 +83,5 @@ func generateSalt() ([]byte, error) {
 		fmt.Println(err)
 		return nil, err
 	}
-	dst := make([]byte, base64.StdEncoding.EncodedLen(len(salt)))
-	base64.StdEncoding.Encode(dst, salt)
-	return dst, nil
+	return salt, nil
 }

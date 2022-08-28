@@ -12,7 +12,7 @@ import (
 	"github.com/atotto/clipboard"
 )
 
-const long = `Bwill give you the password generated from the given key. By default the key 
+const getDescription = `Bwill give you the password generated from the given key. By default the key 
 will be put into your clipboard but use -p to use stdout`
 
 func init() {
@@ -22,7 +22,7 @@ func init() {
 var getCmd = &cobra.Command {
 	Use: "get",
 	Short: "will give you the password generated from the given key",
-	Long: long,
+	Long: getDescription,
 	Run: getExec,
 }
 
